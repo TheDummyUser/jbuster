@@ -43,6 +43,7 @@ public class Main {
         var bouncer = new Semaphore(maxThreads);
         var sizeSkip = new HashSet<Integer>();
         var statusSkip = new HashSet<Integer>();
+        var extensions = new ArrayList<String>();
 
         if (wordList == null || url == null) {
             System.err.println("Error: Missing required arguments.");
@@ -78,6 +79,20 @@ public class Main {
             }
         }
 
+        if (params.containsKey("-e")) {
+            var exts = params.get("-e").split(",");
+
+            for (var ext : exts) {
+                try {
+                    extensions.add(ext);
+                } catch (Exception e) {
+                    System.out.println(
+                        "warning: invalid extensions provided in -e flag: " + e
+                    );
+                }
+            }
+        }
+
         try (
             var executor = Executors.newVirtualThreadPerTaskExecutor();
             var lines = Files.lines(Paths.get(wordList))
@@ -95,7 +110,8 @@ public class Main {
                                     url,
                                     line,
                                     sizeSkip,
-                                    statusSkip
+                                    statusSkip,
+                                    extensions
                                 );
                             } finally {
                                 bouncer.release();
@@ -117,13 +133,41 @@ public class Main {
             -w : path to the wordlist
             -u : url link
             -t : max threads, default 20
-            -Ss : size skip
-            -x : status skip
-
+            -Ss : size skip [-Ss 452,352,600,900] as size of the page
+            -x : status skip [-x 301,302,400,401,402]
+            -e : extensions [-e php,html,txt,bok] as use need
             base example:
             java Main.java -u https://example.com -w wordlist.txt -t 50 -Ss 452 -x 301,302,400,401,402
             """
         );
+    }
+
+    private static List<String> urlGen(
+        String baseUrl,
+        String path,
+        List<String> extensions
+    ) {
+        var urlsToTest = new ArrayList<String>();
+
+        var cleanBase = baseUrl.endsWith("/")
+            ? baseUrl.substring(0, baseUrl.length() - 1)
+            : baseUrl;
+        var cleanPath = path.startsWith("/") ? path.substring(1) : path;
+        var fullPath = cleanBase + "/" + cleanPath;
+
+        urlsToTest.add(fullPath);
+        if (extensions != null && !extensions.isEmpty()) {
+            var pathForExtensions = fullPath.endsWith("/")
+                ? fullPath.substring(0, fullPath.length() - 1)
+                : fullPath;
+
+            for (var ext : extensions) {
+                var safeExt = ext.startsWith(".") ? ext : "." + ext;
+                urlsToTest.add(pathForExtensions + safeExt);
+            }
+        }
+
+        return urlsToTest;
     }
 
     private static void checkUrl(
@@ -131,36 +175,38 @@ public class Main {
         String baseUrl,
         String path,
         Set<Integer> sizeSkip,
-        Set<Integer> skipStatus
+        Set<Integer> skipStatus,
+        List<String> extensions
     ) {
         try {
-            var fullUrl = baseUrl.endsWith("/")
-                ? baseUrl + path
-                : baseUrl + "/" + path;
-            var request = HttpRequest.newBuilder()
-                .uri(URI.create(fullUrl))
-                .header("User-Agent", "JBuster-1.0")
-                .timeout(Duration.ofSeconds(5))
-                .GET()
-                .build();
+            var allUrls = urlGen(baseUrl, path, extensions);
 
-            var response = client.send(
-                request,
-                HttpResponse.BodyHandlers.ofByteArray()
-            );
-            int statusCode = response.statusCode();
-            int responseSize = response.body().length;
+            for (var fullUrl : allUrls) {
+                var request = HttpRequest.newBuilder()
+                    .uri(URI.create(fullUrl))
+                    .header("User-Agent", "JBuster-1.0")
+                    .timeout(Duration.ofSeconds(5))
+                    .GET()
+                    .build();
 
-            if (sizeSkip.contains(responseSize)) return;
+                var response = client.send(
+                    request,
+                    HttpResponse.BodyHandlers.ofByteArray()
+                );
+                int statusCode = response.statusCode();
+                int responseSize = response.body().length;
 
-            if (skipStatus.contains(statusCode)) return;
+                if (sizeSkip.contains(responseSize)) return;
 
-            System.out.printf(
-                "[status code %d] -> %s -> [size %d]\n",
-                statusCode,
-                fullUrl,
-                responseSize
-            );
+                if (skipStatus.contains(statusCode)) return;
+
+                System.out.printf(
+                    "[status code %d] -> %s -> [size %d]\n",
+                    statusCode,
+                    fullUrl,
+                    responseSize
+                );
+            }
         } catch (Exception e) {
             // Silence connection errors to keep the terminal clean
         }
