@@ -15,14 +15,22 @@ public class Main {
             return;
         }
         var params = new HashMap<String, String>();
+        var customHeaders = new ArrayList<String>();
+
         var client = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(5))
+            .connectTimeout(Duration.ofSeconds(3))
             .followRedirects(HttpClient.Redirect.NEVER)
             .build();
 
         for (int i = 0; i < args.length; i++) {
             var currentArg = args[i];
-            if (currentArg.startsWith("-")) {
+
+            if (currentArg.equals("-H")) {
+                if (i + 1 < args.length) {
+                    customHeaders.add(args[i + 1]);
+                    i++;
+                }
+            } else if (currentArg.startsWith("-")) {
                 if (i + 1 < args.length && !args[i + 1].startsWith("-")) {
                     params.put(currentArg, args[i + 1]);
                     i++;
@@ -178,10 +186,10 @@ public class Main {
         Set<Integer> skipStatus,
         List<String> extensions
     ) {
-        try {
-            var allUrls = urlGen(baseUrl, path, extensions);
+        var allUrls = urlGen(baseUrl, path, extensions);
 
-            for (var fullUrl : allUrls) {
+        for (var fullUrl : allUrls) {
+            try {
                 var request = HttpRequest.newBuilder()
                     .uri(URI.create(fullUrl))
                     .header("User-Agent", "JBuster-1.0")
@@ -206,9 +214,9 @@ public class Main {
                     fullUrl,
                     responseSize
                 );
+            } catch (Exception e) {
+                // Silence connection errors to keep the terminal clean
             }
-        } catch (Exception e) {
-            // Silence connection errors to keep the terminal clean
         }
     }
 }
