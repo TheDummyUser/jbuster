@@ -1,11 +1,13 @@
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.*;
+import java.net.http.HttpClient.Version;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class Main {
 
@@ -52,7 +54,10 @@ public class Main {
         var sizeSkip = new HashSet<Integer>();
         var statusSkip = new HashSet<Integer>();
         var extensions = new ArrayList<String>();
-
+        var httpArgs = params.getOrDefault("-hv", "1.1");
+        var prefferedVersion = httpArgs.equals("2")
+            ? Version.HTTP_2
+            : Version.HTTP_1_1;
         if (wordList == null || url == null) {
             System.err.println("Error: Missing required arguments.");
             System.err.println(
@@ -101,6 +106,26 @@ public class Main {
             }
         }
 
+        long totalWordCount = 0;
+
+        try (var stream = Files.lines(Paths.get(wordList))) {
+            totalWordCount = stream.count();
+        } catch (Exception e) {
+            System.err.println("Could not read wordlist to calculate total.");
+            return;
+        }
+
+        int multiplyer = extensions.isEmpty() ? 1 : 1 + extensions.size();
+
+        long totalRequests = totalWordCount * multiplyer;
+
+        var completedRequests = new AtomicInteger(0);
+
+        System.out.println(
+            "[*] Starting scan: " +
+                totalRequests +
+                " total requests to make...\n"
+        );
         try (
             var executor = Executors.newVirtualThreadPerTaskExecutor();
             var lines = Files.lines(Paths.get(wordList))
@@ -119,7 +144,10 @@ public class Main {
                                     line,
                                     sizeSkip,
                                     statusSkip,
-                                    extensions
+                                    extensions,
+                                    prefferedVersion,
+                                    completedRequests,
+                                    totalRequests
                                 );
                             } finally {
                                 bouncer.release();
@@ -144,8 +172,9 @@ public class Main {
             -Ss : size skip [-Ss 452,352,600,900] as size of the page
             -x : status skip [-x 301,302,400,401,402]
             -e : extensions [-e php,html,txt,bok] as use need
+            -hv : 1.1 or 2, default 1.1
             base example:
-            java Main.java -u https://example.com -w wordlist.txt -t 50 -Ss 452 -x 301,302,400,401,402
+            java Main.java -u https://example.com -w wordlist.txt -t 50 -Ss 452 -x 301,302,400,401,402 -hv 2
             """
         );
     }
@@ -184,7 +213,10 @@ public class Main {
         String path,
         Set<Integer> sizeSkip,
         Set<Integer> skipStatus,
-        List<String> extensions
+        List<String> extensions,
+        Version prefferedVersion,
+        AtomicInteger completedRequests,
+        long totalRequests
     ) {
         var allUrls = urlGen(baseUrl, path, extensions);
 
@@ -193,6 +225,7 @@ public class Main {
                 var request = HttpRequest.newBuilder()
                     .uri(URI.create(fullUrl))
                     .header("User-Agent", "JBuster-1.0")
+                    .version(prefferedVersion)
                     .timeout(Duration.ofSeconds(5))
                     .GET()
                     .build();
@@ -201,9 +234,23 @@ public class Main {
                     request,
                     HttpResponse.BodyHandlers.ofByteArray()
                 );
+
                 int statusCode = response.statusCode();
                 int responseSize = response.body().length;
 
+                int current = completedRequests.incrementAndGet();
+
+                if (current % 50 == 0 || current == totalRequests) {
+                    double percent = (current * 100.0) / totalRequests;
+                    System.out.print(
+                        String.format(
+                            "\r[~] Progress: %d / %d (%.2f%%)",
+                            current,
+                            totalRequests,
+                            percent
+                        )
+                    );
+                }
                 if (sizeSkip.contains(responseSize)) return;
 
                 if (skipStatus.contains(statusCode)) return;
@@ -216,6 +263,7 @@ public class Main {
                 );
             } catch (Exception e) {
                 // Silence connection errors to keep the terminal clean
+                completedRequests.incrementAndGet();
             }
         }
     }

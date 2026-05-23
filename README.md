@@ -84,13 +84,14 @@ jbuster -u http://10.10.11.55 -w wordlist.txt -t 150 -e php,txt -x 404,503 -Ss 1
 ### Flags
 
 ```text
--h  : Spits out all the commands
--w  : Path to the wordlist (Required)
--u  : Target URL (Required)
--t  : Max concurrent threads (Default: 20, recommended for CTFs: 100+)
--Ss : Size skip (e.g., -Ss 452,1024)
--x  : Status code skip (e.g., -x 404,403,500)
--e  : File extensions to append (e.g., -e php,html,txt)
+  -h : help to spil out all the commands
+  -w : path to the wordlist
+  -u : url link
+  -t : max threads, default 20
+  -Ss : size skip [-Ss 452,352,600,900] as size of the page
+  -x : status skip [-x 301,302,400,401,402]
+  -e : extensions [-e php,html,txt,bok] as use need
+  -hv : 1.1 or 2, default 1.1
 
 ```
 
@@ -105,4 +106,4 @@ The core engine is rock solid. The next phase of development will focus on addin
 * [ ] **Save Output to File (`-o`):** Implement thread-safe writers to log discovered endpoints to a `.txt` or `.json` file for reporting.
 * [ ] **Rate Limiting / Delay (`-d`):** Add millisecond delays between requests to bypass Web Application Firewalls (WAFs) without getting IP banned.
 * [ ] **Live Progress Tracker:** A dynamic terminal counter (e.g., `[ 4500 / 100000 ]`) using `AtomicInteger` to track scan completion in real-time.
-* [ ] **HTB/CTF Optimized:** Forces HTTP/1.1 connections to prevent the infamous HTTP/2 handshake hang on older/custom target servers.
+* [x] **HTB/CTF Optimized:** Forces HTTP/1.1 connections to prevent the infamous HTTP/2 handshake hang on older/custom target servers.
